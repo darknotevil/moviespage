@@ -406,44 +406,88 @@
       };
     }
 
-    // Добавить/убрать фильм в коллекции (toggle через сервер):
-    // add -> если "уже добавлена" (code 300 / 500) -> remove-card.
-    function toggleCollection(col, card, onState) {
-      var params = {
-        id: col.id,
-        card_id: card.id,
-        card_type: card.type
-      };
+    var PINNED_COLLECTION = 3061;
+    var MAX_SCAN_PAGES = 10;
 
-      function doRemove() {
-        Api.removeCard(params, function (data) {
-          if (data && data.secuses) {
-            if (onState) onState(false);
-            Lampa.Noty.show('Убрано из «' + col.title + '»');
-          } else Lampa.Noty.show('Не удалось убрать из «' + col.title + '»');
-        }, function (a, ex) {
-          Lampa.Noty.show(network.errorDecode(a, ex));
+    function isDup(resp, jqXHR) {
+      if (resp && (resp.error || resp.code == 300)) return true;
+      if (jqXHR && jqXHR.responseJSON && jqXHR.responseJSON.code == 300) return true;
+      if (jqXHR && jqXHR.status == 500) return true;
+      return false;
+    }
+
+    // Проверить, есть ли фильм в коллекции — постранично, с ранним выходом.
+    function scanCollection(col, tmdbId, cb) {
+      var page = 1;
+      function next() {
+        Api.full({
+          url: col.id,
+          page: page
+        }, function (data) {
+          var results = data && data.results ? data.results : [];
+          var found = results.some(function (it) {
+            return it.id == tmdbId;
+          });
+          if (found) return cb(true);
+          if (!results.length || page >= MAX_SCAN_PAGES) return cb(false);
+          page++;
+          next();
+        }, function () {
+          cb(false);
         });
       }
+      next();
+    }
 
-      function alreadyAdded(resp, jqXHR) {
-        if (resp && (resp.error || resp.code == 300)) return true;
-        if (jqXHR && jqXHR.responseJSON && jqXHR.responseJSON.code == 300) return true;
-        if (jqXHR && jqXHR.status == 500) return true;
-        return false;
-      }
+    // Вернуть галочку в прежнее состояние при ошибке.
+    function revert(element, item, msg) {
+      element.checked = !element.checked;
+      item.toggleClass('selectbox-item--checked', element.checked);
+      if (msg) Lampa.Noty.show(msg);
+    }
 
-      Api.addCard(params, function (data) {
-        if (data && data.secuses) {
-          if (onState) onState(true);
-          Lampa.Noty.show('Добавлено в «' + col.title + '»');
-        } else if (alreadyAdded(data, null)) {
-          doRemove();
+    function onCollectionCheck(card) {
+      return function (element, item) {
+        var col = element.collection;
+        var params = {
+          id: col.id,
+          card_id: card.id,
+          card_type: card.type
+        };
+        if (element.checked) {
+          // отметили -> добавить
+          Api.addCard(params, function (data) {
+            if (data && data.secuses) Lampa.Noty.show('Добавлено в «' + col.title + '»');else if (isDup(data, null)) Lampa.Noty.show('Уже в «' + col.title + '»');else revert(element, item, 'Не удалось добавить в «' + col.title + '»');
+          }, function (a, ex) {
+            if (isDup(a && a.responseJSON, a)) Lampa.Noty.show('Уже в «' + col.title + '»');else revert(element, item, network.errorDecode(a, ex));
+          });
         } else {
-          Lampa.Noty.show('Не удалось добавить в «' + col.title + '»');
+          // сняли -> убрать
+          Api.removeCard(params, function (data) {
+            if (data && data.secuses) Lampa.Noty.show('Убрано из «' + col.title + '»');else revert(element, item, 'Не удалось убрать из «' + col.title + '»');
+          }, function (a, ex) {
+            revert(element, item, network.errorDecode(a, ex));
+          });
         }
-      }, function (a, ex) {
-        if (alreadyAdded(a && a.responseJSON, a)) doRemove();else Lampa.Noty.show(network.errorDecode(a, ex));
+      };
+    }
+
+    function showCollectionsSelect(card, cols, membership) {
+      var items = cols.map(function (col) {
+        return {
+          title: Lampa.Utils.capitalizeFirstLetter(col.title),
+          collection: col,
+          checkbox: true,
+          checked: !!membership[col.id]
+        };
+      });
+      Lampa.Select.show({
+        title: 'Коллекции',
+        items: items,
+        onCheck: onCollectionCheck(card),
+        onBack: function onBack() {
+          Lampa.Controller.toggle('content');
+        }
       });
     }
 
@@ -454,21 +498,34 @@
           Lampa.Noty.show('У вас нет коллекций');
           return;
         }
-        var items = cols.map(function (col) {
-          return {
-            title: Lampa.Utils.capitalizeFirstLetter(col.title),
-            collection: col
-          };
-        });
-        Lampa.Select.show({
-          title: 'Коллекции',
-          items: items,
-          onSelect: function onSelect(item) {
-            toggleCollection(item.collection, card);
-          },
-          onBack: function onBack() {
-            Lampa.Controller.toggle('content');
-          }
+
+        // Закрепляем коллекцию 3061 первой (если её нет — порядок не меняется)
+        cols = cols.filter(function (c) {
+          return c.id == PINNED_COLLECTION;
+        }).concat(cols.filter(function (c) {
+          return c.id != PINNED_COLLECTION;
+        }));
+
+        // Автопроверка членства фильма в каждой коллекции (параллельно)
+        var canceled = false;
+        Lampa.Loading.start(function () {
+          canceled = true;
+          network.clear();
+          Lampa.Loading.stop();
+        }, 'Коллекции');
+
+        var status = new Lampa.Status(cols.length);
+        var membership = {};
+        status.onComplite = function () {
+          if (canceled) return;
+          Lampa.Loading.stop();
+          showCollectionsSelect(card, cols, membership);
+        };
+        cols.forEach(function (col) {
+          scanCollection(col, card.id, function (found) {
+            membership[col.id] = found;
+            status.append('c' + col.id, found);
+          });
         });
       }, function (a, ex) {
         Lampa.Noty.show(network.errorDecode(a, ex));
