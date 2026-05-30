@@ -85,7 +85,7 @@
     };
     function ensureStyles() {
       if (document.getElementById(STYLE_ID)) return;
-      var style = "\n        .lme-buttons {\n            display: flex;\n            flex-wrap: wrap;\n            gap: 10px;\n        }\n        .lme-button-hide {\n            display: none !important;\n        }\n        .lme-button-text-hidden span {\n            display: none;\n        }\n    ";
+      var style = "\n        .lme-buttons {\n            display: flex;\n            flex-wrap: wrap;\n            gap: 10px;\n        }\n        .lme-button-hide {\n            display: none !important;\n        }\n        .lme-button-text-hidden span {\n            display: none;\n        }\n        .full-start-new__buttons.lme-button-text-hidden .full-start__button span {\n            display: none !important;\n        }\n    ";
       $('head').append("<style id=\"".concat(STYLE_ID, "\">").concat(style, "</style>"));
     }
     function readArray(key) {
@@ -223,6 +223,8 @@
     function applyLayout(fullContainer) {
       if (!fullContainer || !fullContainer.length) return;
       ensureStyles();
+      // Скрываем блок реакций других пользователей (эмодзи) над рядом кнопок
+      fullContainer.find('.full-start-new__reactions').addClass('lme-button-hide');
       var priority = fullContainer.find('.full-start-new__buttons .button--priority').detach();
       fullContainer.find('.full-start-new__buttons .button--play').remove();
       var _scanButtons = scanButtons(fullContainer, true, false),
@@ -297,6 +299,7 @@
       });
     }
     function openEditorFromSettings() {
+      var enabled = Lampa.Controller.enabled().name;
       if (!lastFullContainer || !lastFullContainer.length || !document.body.contains(lastFullContainer[0])) {
         var current = resolveActiveFullContainer();
         if (current) {
@@ -314,6 +317,7 @@
           scroll_to_center: true,
           onBack: function onBack() {
             Lampa.Modal.close();
+            Lampa.Controller.toggle(enabled);
           }
         });
         return;
