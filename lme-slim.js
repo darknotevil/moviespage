@@ -9,45 +9,39 @@
       Lampa.Lang.add({
         lme_title: {
           ru: "Movie Enhancer",
-          en: "Movie Enhancer",
-          uk: "Movie Enhancer",
-          ro: "Movie Enhancer"
+          en: "Movie Enhancer"
         },
         lme_showbutton_desc: {
           ru: "Выводит все кнопки действий в карточке",
-          en: "Show all action button in card",
-          uk: "Виводить усі кнопки дій у картці",
-          ro: "Afișează toate butoanele de acțiune în card"
+          en: "Show all action button in card"
         },
         lme_showbutton_name: {
           ru: "Все кнопки в карточке",
-          en: "All buttons in card",
-          uk: "Усі кнопки в картці",
-          ro: "Toate butoanele în card"
+          en: "All buttons in card"
         },
         lme_showbuttonwn_desc: {
-          ru: "Показивать только иконки",
-          en: "Show only icon",
-          uk: "Відображати тільки іконки",
-          ro: "Afișează doar pictogramele"
+          ru: "Показывать только иконки",
+          en: "Show only icon"
         },
         lme_showbuttonwn_name: {
           ru: "Скрыть текст",
-          en: "Hide text",
-          uk: "Приховати текст",
-          ro: "Ascunde textul"
+          en: "Hide text"
         },
         lme_button_editor_name: {
           ru: "Редактировать кнопки",
-          en: "Edit buttons",
-          uk: "Редагувати кнопки",
-          ro: "Editare butoane"
+          en: "Edit buttons"
         },
         lme_button_editor_desc: {
           ru: "Сортировка и скрытие кнопок карточки",
-          en: "Reorder and hide card buttons",
-          uk: "Сортування та приховування кнопок картки",
-          ro: "Reordonarea și ascunderea butoanelor din card"
+          en: "Reorder and hide card buttons"
+        },
+        lme_fastbook_name: {
+          ru: "Закладка одним нажатием",
+          en: "One-tap bookmark"
+        },
+        lme_fastbook_desc: {
+          ru: "Кнопка закладки сразу добавляет/убирает из закладок, без меню",
+          en: "Bookmark button adds/removes the bookmark directly, without the menu"
         }
       });
     }
@@ -344,6 +338,27 @@
       openEditorFromSettings: openEditorFromSettings
     };
 
+    // Переопределяем штатную кнопку «закладка»: одно нажатие = toggle book без меню.
+    // Иконка обновляется сама (движок шлёт state:changed, штатный листенер ловит).
+    function fastBookMain() {
+      Lampa.Listener.follow('full', function (e) {
+        if (e.type !== 'complite') return;
+        var render = e.object && e.object.activity && typeof e.object.activity.render === 'function' ? e.object.activity.render() : null;
+        if (!render) return;
+        var book = render.find('.button--book');
+        if (!book.length) return;
+        var card = e.data && e.data.movie ? e.data.movie : e.object && (e.object.card || e.object.movie);
+        if (!card) return;
+        book.unbind('hover:enter');
+        book.on('hover:enter', function () {
+          Lampa.Favorite.toggle('book', card);
+        });
+      });
+    }
+    var fastBook = {
+      main: fastBookMain
+    };
+
     function main$6() {
       Lampa.SettingsApi.addComponent({
         component: "lme",
@@ -397,6 +412,22 @@
           }
         });
       }
+      // Закладка одним нажатием (независимо от «Все кнопки»)
+      Lampa.SettingsApi.addParam({
+        component: "lme",
+        param: {
+          name: "lme_fastbook",
+          type: "trigger",
+          "default": false
+        },
+        field: {
+          name: Lampa.Lang.translate('lme_fastbook_name'),
+          description: Lampa.Lang.translate('lme_fastbook_desc')
+        },
+        onChange: function onChange(value) {
+          Lampa.Settings.update();
+        }
+      });
     }
     var CONFIG = {
       main: main$6
@@ -415,6 +446,7 @@
       Lampa.Manifest.plugins = manifest;
       CONFIG.main();
       if (Lampa.Storage.get('lme_showbutton') == true) showButton.main();
+      if (Lampa.Storage.get('lme_fastbook') == true) fastBook.main();
     }
     function startPlugin() {
       window.plugin_lme_ready = true;
