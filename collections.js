@@ -348,6 +348,19 @@
       }, params, header());
     }
 
+    function roll(oncomplite, onerror) {
+      var user = Lampa.Storage.get('account', '{}');
+      network.silent(api_url + 'roll?cid=' + user.id, oncomplite, onerror, false, header());
+    }
+
+    function addCard(params, oncomplite, onerror) {
+      network.silent(api_url + 'add', oncomplite, onerror, params, header());
+    }
+
+    function removeCard(params, oncomplite, onerror) {
+      network.silent(api_url + 'remove-card', oncomplite, onerror, params, header());
+    }
+
     function full(params, oncomplite, onerror) {
       network.silent(api_url + 'view/' + params.url + '?page=' + params.page, function (data) {
         data.total_pages = data.total_pages || 15;
@@ -364,8 +377,123 @@
       collection: collection,
       full: full,
       clear: clear,
-      liked: liked
+      liked: liked,
+      roll: roll,
+      addCard: addCard,
+      removeCard: removeCard
     };
+
+    // ── Кнопка «Коллекции» на карточке фильма ────────────────────────────────
+
+    function cardButtonHtml() {
+      return '<div class="full-start__button selector view--collections">' +
+        '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M3 7h13M3 12h13M3 17h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' +
+        '<path d="M18 14v8M22 18h-8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' +
+        '</svg>' +
+        '<span>Коллекции</span>' +
+        '</div>';
+    }
+
+    function fullCardData(e) {
+      var movie = e && e.data && e.data.movie ? e.data.movie : e && e.object ? e.object.card || e.object.movie || e.object : null;
+      var id = (movie && movie.id) || (e && e.object && e.object.id);
+      var method = e && e.object && e.object.method;
+      var type = method === 'tv' || (movie && (movie.name || movie.first_air_date) && !movie.title) ? 'tv' : 'movie';
+      return {
+        id: id,
+        type: type
+      };
+    }
+
+    // Добавить/убрать фильм в коллекции (toggle через сервер):
+    // add -> если "уже добавлена" (code 300 / 500) -> remove-card.
+    function toggleCollection(col, card, onState) {
+      var params = {
+        id: col.id,
+        card_id: card.id,
+        card_type: card.type
+      };
+
+      function doRemove() {
+        Api.removeCard(params, function (data) {
+          if (data && data.secuses) {
+            if (onState) onState(false);
+            Lampa.Noty.show('Убрано из «' + col.title + '»');
+          } else Lampa.Noty.show('Не удалось убрать из «' + col.title + '»');
+        }, function (a, ex) {
+          Lampa.Noty.show(network.errorDecode(a, ex));
+        });
+      }
+
+      function alreadyAdded(resp, jqXHR) {
+        if (resp && (resp.error || resp.code == 300)) return true;
+        if (jqXHR && jqXHR.responseJSON && jqXHR.responseJSON.code == 300) return true;
+        if (jqXHR && jqXHR.status == 500) return true;
+        return false;
+      }
+
+      Api.addCard(params, function (data) {
+        if (data && data.secuses) {
+          if (onState) onState(true);
+          Lampa.Noty.show('Добавлено в «' + col.title + '»');
+        } else if (alreadyAdded(data, null)) {
+          doRemove();
+        } else {
+          Lampa.Noty.show('Не удалось добавить в «' + col.title + '»');
+        }
+      }, function (a, ex) {
+        if (alreadyAdded(a && a.responseJSON, a)) doRemove();else Lampa.Noty.show(network.errorDecode(a, ex));
+      });
+    }
+
+    function openCollectionsMenu(card) {
+      Api.roll(function (data) {
+        var cols = data && data.results ? data.results : [];
+        if (!cols.length) {
+          Lampa.Noty.show('У вас нет коллекций');
+          return;
+        }
+        var items = cols.map(function (col) {
+          return {
+            title: Lampa.Utils.capitalizeFirstLetter(col.title),
+            collection: col
+          };
+        });
+        Lampa.Select.show({
+          title: 'Коллекции',
+          items: items,
+          onSelect: function onSelect(item) {
+            toggleCollection(item.collection, card);
+          },
+          onBack: function onBack() {
+            Lampa.Controller.toggle('content');
+          }
+        });
+      }, function (a, ex) {
+        Lampa.Noty.show(network.errorDecode(a, ex));
+      });
+    }
+
+    function addCollectionsButton(e) {
+      if (e.type !== 'complite') return;
+      var user = Lampa.Storage.get('account', '{}');
+      if (!user.token) return;
+
+      var render = e.object && e.object.activity && typeof e.object.activity.render === 'function' ? e.object.activity.render() : e.body ? $(e.body) : null;
+      if (!render) return;
+      var buttons = render.find('.full-start-new__buttons');
+      if (!buttons.length || buttons.find('.view--collections').length) return;
+
+      var card = fullCardData(e);
+      if (!card.id) return;
+
+      var btn = $(cardButtonHtml());
+      btn.on('hover:enter', function () {
+        openCollectionsMenu(card);
+      });
+      buttons.append(btn);
+    }
 
     function component$2(object) {
       var comp = new Lampa.InteractionMain(object);
@@ -483,6 +611,9 @@
           if (e.type == 'ready') add();
         });
       }
+
+      // Кнопка «Коллекции» на карточке фильма
+      Lampa.Listener.follow('full', addCollectionsButton);
     }
 
     if (!window.cub_collections_ready && Lampa.Manifest.app_digital >= 242) startPlugin();
