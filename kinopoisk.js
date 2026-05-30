@@ -2,15 +2,13 @@
     'use strict';
 
     // Кнопка «Открыть в КиноПоиске» в карточке фильма.
-    // На Android запускает приложение КиноПоиск (TV или телефон) по deeplink,
-    // если установлено; иначе открывает страницу в браузере.
-
-    // Кандидаты пакетов: сначала ТВ, потом телефонная версия.
-    var PACKAGES = ['ru.kinopoisk.tv', 'ru.kinopoisk.yandex'];
-
-    function hasStartApp() {
-      return typeof startApp !== 'undefined' && startApp && typeof startApp.set === 'function';
-    }
+    // Нажатие  -> открыть фильм в приложении КиноПоиск (deeplink kpatv://film/<id>).
+    // Долгое   -> открыть страницу фильма на сайте в браузере (надёжный запасной путь).
+    //
+    // Примечание: приложение ru.kinopoisk.tv ловит kpatv://film/<id> и
+    // https://hd.kinopoisk.ru/film/<id>, но идентификатор там — внутренний HD-id.
+    // Классический kinopoisk_id совпадает для фильмов, доступных в КиноПоиск HD;
+    // для остальных приложение откроет домашнюю — тогда выручает долгое нажатие (сайт).
 
     // Достаём kinopoisk_id из разных мест события 'full'.
     function getKpId(e) {
@@ -39,45 +37,32 @@
       return 'https://www.kinopoisk.ru/index.php?kp_query=' + encodeURIComponent(title);
     }
 
-    function openBrowser(url) {
+    // Открыть URL/схему так, чтобы её перехватила ОС (webview Лампы передаёт
+    // неизвестные схемы системе — как с lampa://exit). Для kpatv:// откроется приложение.
+    function openScheme(url) {
+      try {
+        var a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () {
+          if (a.parentNode) a.parentNode.removeChild(a);
+        }, 1000);
+      } catch (e) {
+        if (window.Lampa && Lampa.Android && Lampa.Android.openBrowser) Lampa.Android.openBrowser(url);
+      }
+    }
+
+    // Открыть веб-страницу в браузере.
+    function openSite(url) {
       if (window.Lampa && Lampa.Android && Lampa.Android.openBrowser) Lampa.Android.openBrowser(url);
       else window.open(url, '_blank');
     }
 
-    // Находим установленный пакет КиноПоиска (перебор кандидатов через startApp.check).
-    function findInstalled(cb) {
-      if (!hasStartApp()) return cb(null);
-      var i = 0;
-      (function next() {
-        if (i >= PACKAGES.length) return cb(null);
-        var pkg = PACKAGES[i++];
-        startApp.set({ application: pkg }).check(function () {
-          cb(pkg);
-        }, function () {
-          next();
-        });
-      })();
-    }
-
-    function openKinopoisk(url) {
-      findInstalled(function (pkg) {
-        if (hasStartApp() && pkg) {
-          // 1) пробуем открыть конкретную страницу в приложении
-          startApp.set({
-            action: 'android.intent.action.VIEW',
-            uri: url,
-            package: pkg
-          }).start(function () {}, function () {
-            // 2) не вышло по deeplink — просто запускаем приложение
-            startApp.set({ application: pkg }).start(function () {}, function () {
-              openBrowser(url);
-            });
-          });
-        } else {
-          // приложения нет / не Android — открываем в браузере
-          openBrowser(url);
-        }
-      });
+    // Открыть фильм в приложении КиноПоиск.
+    function openInApp(id) {
+      openScheme('kpatv://film/' + id);
     }
 
     function buttonHtml() {
@@ -110,11 +95,17 @@
       var title = getTitle(e);
       if (!id && !title) return; // нечего открывать
 
-      var url = id ? filmUrl(id) : searchUrl(title);
-
       var btn = $(buttonHtml());
+
+      // Нажатие — открыть в приложении (если есть id), иначе поиск на сайте.
       btn.on('hover:enter', function () {
-        openKinopoisk(url);
+        if (id) openInApp(id);
+        else openSite(searchUrl(title));
+      });
+
+      // Долгое нажатие — открыть страницу фильма на сайте в браузере.
+      btn.on('hover:long', function () {
+        openSite(id ? filmUrl(id) : searchUrl(title));
       });
 
       buttons.append(btn);
