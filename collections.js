@@ -402,7 +402,8 @@
       var type = method === 'tv' || (movie && (movie.name || movie.first_air_date) && !movie.title) ? 'tv' : 'movie';
       return {
         id: id,
-        type: type
+        type: type,
+        movie: movie || { id: id }
       };
     }
 
@@ -448,6 +449,13 @@
 
     function onCollectionCheck(card) {
       return function (element, item) {
+        // Избранное (Закладки) — мгновенно через встроенный Lampa.Favorite
+        if (element.favorite) {
+          Lampa.Favorite.toggle(element.favorite, card.movie);
+          Lampa.Noty.show(element.checked ? 'Добавлено в закладки' : 'Убрано из закладок');
+          return;
+        }
+
         var col = element.collection;
         var params = {
           id: col.id,
@@ -473,13 +481,24 @@
     }
 
     function showCollectionsSelect(card, cols, membership) {
-      var items = cols.map(function (col) {
-        return {
+      var items = [];
+
+      // Закладки (избранное) — сверху, состояние мгновенно из Lampa.Favorite
+      var favStatus = (Lampa.Favorite && Lampa.Favorite.check ? Lampa.Favorite.check(card.movie) : {}) || {};
+      items.push({
+        title: Lampa.Lang.translate('title_book'),
+        favorite: 'book',
+        checkbox: true,
+        checked: !!favStatus.book
+      });
+
+      cols.forEach(function (col) {
+        items.push({
           title: Lampa.Utils.capitalizeFirstLetter(col.title),
           collection: col,
           checkbox: true,
           checked: !!membership[col.id]
-        };
+        });
       });
       Lampa.Select.show({
         title: 'Коллекции',
