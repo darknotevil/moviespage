@@ -11,8 +11,8 @@ https://darknotevil.github.io/lampa-plugins-collection/collections.js
 
 
 todo:
-superplugin.js - будет подгружать все плагины из репозитория
-torrents.js - изменит вид поиска торрентов
-kinopoisk.js - нужен фикс тв
-okko.js - аналогичный функционал для окко
-vkvideo.js - позволяет найти фильм в вк видео
+- superplugin.js - будет подгружать все плагины из репозитория
+- torrents.js - изменит вид поиска торрентов
+- kinopoisk.js - нужен фикс тв
+- okko.js - аналогичный функционал для окко
+- vkvideo.js - позволяет найти фильм в вк видео
